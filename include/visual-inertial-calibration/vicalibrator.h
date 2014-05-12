@@ -579,7 +579,7 @@ class ViCalibrator : public ceres::IterationCallback {
       }
     }
 
-    if (FLAGS_calibrate_imu && is_inertial_active_) {
+    if (is_inertial_active_) {
       for (size_t kk = 0; kk < imu_costs_.size(); ++kk) {
         calibu::CostFunctionAndParams& cost = *imu_costs_[kk];
         problem->AddResidualBlock(cost.Cost(), cost.Loss(), cost.Params());
@@ -847,49 +847,43 @@ class ViCalibrator : public ceres::IterationCallback {
 
           mse_ = summary.final_cost / summary.num_residuals;
           if (summary.termination_type != ceres::NO_CONVERGENCE) {
-            if (!is_inertial_active_) {
-              is_inertial_active_ = true;
-              LOG(INFO) << "Activating inertial terms. Optimizing rotation "
-                  "component of T_ck..." << std::endl;
-            } else if (optimize_rotation_only_) {
-              LOG(INFO) << "Finished optimizing rotations. Activating T_ck "
-                  "translation optimization..." << std::endl;
-              optimize_rotation_only_ = false;
-            } else if (!is_bias_active_) {
-              is_bias_active_ = true;
-              LOG(INFO) << "Activating bias terms... " << std::endl;
-              problem_->SetParameterBlockVariable(biases_.data());
-            } else if (!is_scale_factor_active_) {
-              is_scale_factor_active_ = true;
-              LOG(INFO) << "Activating scale factor terms... " << std::endl;
-              problem_->SetParameterBlockVariable(scale_factors_.data());
-            } else {
-              LOG(INFO) << "Optimization Finished... " << std::endl;
-              PrintResults();
-
-              // Print the covariance matrix.
-#if not defined ANDROID && defined COMPUTE_VICALIB_COVARIANCE
-              {
-                std::stringstream ss;
-                for (const std::string& string : covariance_names_) {
-                  ss << string << " ";
-                }
+            if (FLAGS_calibrate_imu) {
+              if (!is_inertial_active_) {
+                is_inertial_active_ = true;
+                LOG(INFO) << "Activating inertial terms. Optimizing rotation "
+                    "component of T_ck..." << std::endl;
+              } else if (optimize_rotation_only_) {
+                LOG(INFO) << "Finished optimizing rotations. Activating T_ck "
+                    "translation optimization..." << std::endl;
+                optimize_rotation_only_ = false;
+              } else if (!is_bias_active_) {
+                is_bias_active_ = true;
+                LOG(INFO) << "Activating bias terms... " << std::endl;
+                problem_->SetParameterBlockVariable(biases_.data());
+              } else if (!is_scale_factor_active_) {
+                is_scale_factor_active_ = true;
+                LOG(INFO) << "Activating scale factor terms... " << std::endl;
+                problem_->SetParameterBlockVariable(scale_factors_.data());
+              } else {
+                is_finished_ = true;
               }
-
-              Eigen::MatrixXd covariance = GetSolutionCovariance(problem_);
-#endif  // ANDROID
-
+            } else {
               is_finished_ = true;
             }
 
-            LOG(INFO) << "bw_ba= " << biases_.transpose() << std::endl;
-            LOG(INFO) << "sfw_sfa= " << scale_factors_.transpose() << std::endl;
-            LOG(INFO) << "G= " << imu_.g_.transpose() << std::endl;
-            LOG(INFO) << "ts= " << imu_.time_offset_ << std::endl;
+            if (is_finished_) {
+              LOG(INFO) << "Optimization Finished... " << std::endl;
+              PrintResults();
+            }
+
+            LOG(INFO) << "bw_ba= " << biases_.transpose();
+            LOG(INFO) << "sfw_sfa= " << scale_factors_.transpose();
+            LOG(INFO) << "G= " << imu_.g_.transpose();
+            LOG(INFO) << "ts= " << imu_.time_offset_;
             break;
           }
         } catch(const std::exception& e) {
-          LOG(WARNING) << e.what() << std::endl;
+          LOG(WARNING) << e.what();
         }
       }
     }
