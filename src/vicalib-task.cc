@@ -22,30 +22,6 @@ DEFINE_bool(find_time_offset, true,
 DEFINE_double(function_tolerance, 1e-6,
               "Convergence criteria for the optimizer.");
 
-DEFINE_double(max_fx_diff, 10.0, "Maximum fx difference between calibrations.");
-DEFINE_double(max_fy_diff, 10.0, "Maximum fy difference between calibrations.");
-DEFINE_double(max_cx_diff, 10.0, "Maximum cx difference between calibrations.");
-DEFINE_double(max_cy_diff, 10.0, "Maximum cy difference between calibrations.");
-
-DEFINE_double(max_fov_w_diff, 0.3,
-              "Maximum fov w parameter difference between calibrations.");
-
-DEFINE_double(max_poly3_diff_k1, 0.1,
-              "Maximum poly3 k1 difference between calibrations.");
-DEFINE_double(max_poly3_diff_k2, 0.1,
-              "Maximum poly3 k2 difference between calibrations.");
-DEFINE_double(max_poly3_diff_k3, 0.1,
-              "Maximum poly3 k3 difference between calibrations.");
-DEFINE_double(max_camera_trans_diff, 0.1,
-              "Max Distance between camera's estimated pose for calibrations"
-              " runs.");
-DEFINE_double(max_camera_angle_diff, 0.1, "Maximum angle difference in radians"
-              " along axeses of camera between calibrations.");
-DEFINE_double(max_imu_gyro_diff, 0.1,
-              "Maximum gyroscope bias difference between calibrations.");
-DEFINE_double(max_imu_accel_diff, 0.1,
-              "Maximum accelrometer bias difference between calibrations.");
-
 namespace visual_inertial_calibration {
 
 struct VicalibGuiOptions {
@@ -503,6 +479,7 @@ void VicalibTask::Finish(const std::string& output_filename) {
 
 std::vector<bool> VicalibTask::AddSuperFrame(
     const std::shared_ptr<pb::ImageArray>& images) {
+  CHECK(images);
   images_ = images;
 
   int num_new_frames = 0;
@@ -512,6 +489,7 @@ std::vector<bool> VicalibTask::AddSuperFrame(
   LOG(INFO) << "Frame timestamps: ";
   for (int ii = 0; ii < images_->Size(); ++ii) {
     std::shared_ptr<pb::Image> image = images_->at(ii);
+    CHECK(image);
     LOG(INFO) << std::fixed << image->Timestamp();
     if (image->Timestamp() != frame_times_[ii]) {
       num_new_frames++;
@@ -554,137 +532,6 @@ void VicalibTask::AddIMU(const pb::ImuMsg& imu) {
   }
 }
 
-/**
- * Name: CameraCalibrationsDiffer
- *  @args
- *    const CameraAndPose &last:    This will represent previously guessed or
- *                                  estimated parameteres(i.e. Intrinsic and
- *                                  Extrinsics).
- *    const CameraAndPose &current: This will represent parameters estimated in
- *                                  current run.
- *
- *  @return
- *    bool: Return parameter is true if any of the parameter values for last and
- *    current vary more than specified threshold. If all are close to expected
- *    value than it returns false, which is a successful run.
- **/
-bool CameraCalibrationsDiffer(const CameraAndPose& last,
-                         const CameraAndPose& current) {
-  // First comparing intrinsics of the camera.
-  if (last.camera.Type() != current.camera.Type()) {
-    LOG(ERROR) << "Camera calibrations are different types: "
-               << last.camera.Type() << " vs. "
-               << current.camera.Type();
-    return true;
-  }
-
-  Eigen::VectorXd lastParams = last.camera.GenericParams();
-  Eigen::VectorXd currentParams = current.camera.GenericParams();
-
-  LOG(INFO) << "Comparing old camera calibration: " << lastParams
-            << " to new calibration: " << currentParams;
-
-  if (std::abs(lastParams[0] - currentParams[0]) > FLAGS_max_fx_diff) {
-    LOG(ERROR) << "fx differs too much ("
-               << lastParams[0] - currentParams[0] << ")";
-    return true;
-  } else if (std::abs(lastParams[1] - currentParams[1]) > FLAGS_max_fy_diff) {
-    LOG(ERROR) << "fy differs too much ("
-               << lastParams[1] - currentParams[1] << ")";
-    return true;
-  } else if (std::abs(lastParams[2] - currentParams[2]) > FLAGS_max_cx_diff) {
-    LOG(ERROR) << "cx differs too much ("
-               << lastParams[2] - currentParams[2] << ")";
-    return true;
-  } else if (std::abs(lastParams[3] - currentParams[3]) > FLAGS_max_cy_diff) {
-    LOG(ERROR) << "cy differs too much ("
-               << lastParams[3] - currentParams[3] << ")";
-    return true;
-  }
-
-  if (current.camera.Type() == "calibu_fu_fv_u0_v0" &&
-      std::abs(lastParams[4] - currentParams[4]) > FLAGS_max_fov_w_diff) {
-    LOG(ERROR) << "fov distortion differs too much ("
-               << lastParams[4] - currentParams[4] << ")";
-    return true;
-  } else if (current.camera.Type() == "calibu_fu_fv_u0_v0_k1_k2_k3") {
-    double d1 = std::abs(lastParams[4] - currentParams[4]);
-    double d2 = std::abs(lastParams[5] - currentParams[5]);
-    double d3 = std::abs(lastParams[6] - currentParams[6]);
-
-    if (d1 > FLAGS_max_poly3_diff_k1 ||
-        d2 > FLAGS_max_poly3_diff_k2 ||
-        d3 > FLAGS_max_poly3_diff_k3) {
-      LOG(ERROR) << "poly3 distortion differs too much ("
-                 << d1 << ", " << d2 << ", " << d3 << ")";
-      return true;
-    }
-  }
-
-  // Now, coparison for extrinsics will start.
-  // First, comparison of psoition of camera. Comparison here is done by
-  // calculating distance as that requires user to specify only one threshold.
-  Eigen::Vector3d lastTrans = last.T_ck.translation();
-  Eigen::Vector3d currentTrans = current.T_ck.translation();
-  Eigen::Vector3d squareCurrentToLast = (lastTrans - currentTrans);
-  double dist = squareCurrentToLast.norm();
-  if (dist > FLAGS_max_camera_trans_diff) {
-    LOG(ERROR) << "Position of camera differs by " << dist
-               << "more than expected ("
-               << FLAGS_max_camera_trans_diff << ").";
-    return true;
-  }
-
-  // Second, comparison for orientation is done.
-  // Both inverse of old is multiplied with the new estimate this whould result
-  // in and Identity matrix, ideally. Angles along x,y,z are computed with the
-  // new rotation matrix and then compared with threshold.
-  Sophus::SO3d rot_diff = last.T_ck.so3().inverse() * current.T_ck.so3();
-  Eigen::Matrix3d mat_rot_diff = rot_diff.matrix();
-
-  float angle_x = atan2(mat_rot_diff(2, 1), mat_rot_diff(2, 2));
-  float root_square_elem = std::sqrt(mat_rot_diff(2, 1) * mat_rot_diff(2, 1) +
-                                     mat_rot_diff(2, 2) * mat_rot_diff(2, 2));
-  float angle_y = atan2(-1 * mat_rot_diff(2, 0), root_square_elem);
-  float angle_z = atan2(mat_rot_diff(1, 0), mat_rot_diff(0, 0));
-
-  if (std::abs(angle_x) > FLAGS_max_camera_angle_diff ||
-      std::abs(angle_y) > FLAGS_max_camera_angle_diff ||
-      std::abs(angle_z) > FLAGS_max_camera_angle_diff) {
-    LOG(ERROR) << "Camera orientations are farther apart than expected"
-              << " (" << FLAGS_max_camera_angle_diff << ")."
-              << " Difference along x,y,z axis is: "
-              << angle_x << ", " << angle_y << ", " << angle_z;
-    return true;
-  }
-
-  return false;
-}
-
-bool IMUCalibrationDiffer(const Vector6d &last,
-                          const Vector6d &current) {
-  Vector6d diff = last - current;
-
-  if (std::abs(diff(0)) < FLAGS_max_imu_gyro_diff ||
-      std::abs(diff(1)) < FLAGS_max_imu_gyro_diff ||
-      std::abs(diff(2)) < FLAGS_max_imu_gyro_diff ) {
-    LOG(ERROR) << "IMU bias(es) for gyroscope differ ("
-              << diff(0) << ", " << diff(1) << ", " << diff(2)
-              << " ) more than expected (" << FLAGS_max_imu_gyro_diff << ")";
-    return true;
-  }
-
-  if (std::abs(diff(3)) < FLAGS_max_imu_accel_diff ||
-      std::abs(diff(4)) < FLAGS_max_imu_accel_diff ||
-      std::abs(diff(5)) < FLAGS_max_imu_accel_diff ) {
-    LOG(ERROR) << "IMU bias(es) for accelrometer differ ("
-              << diff(3) << ", " << diff(4) << ", " << diff(5)
-              << " ) more than expected (" << FLAGS_max_imu_accel_diff << ")";
-    return true;
-  }
-  return false;
-}
-
 bool VicalibTask::IsSuccessful() const {
   std::vector<double> errors = calibrator_.GetCameraProjRMSE();
   for (size_t i = 0; i < nstreams_; ++i) {
@@ -695,19 +542,6 @@ bool VicalibTask::IsSuccessful() const {
                    << " for camera " << i;
       return false;
     }
-  }
-
-  // Check that camera parameters are within thresholds of previous
-  // run if we initialized our optimization with it
-  if (FLAGS_has_initial_guess) {
-    for (size_t i = 0; i < input_cameras_.size(); ++i) {
-      if (CameraCalibrationsDiffer(input_cameras_[i],
-                                   calibrator_.GetCamera(i))) {
-        return false;
-      }
-    }
-    if (IMUCalibrationDiffer(input_imu_biases_, calibrator_.GetBiases()))
-      return false;
   }
   return true;
 }

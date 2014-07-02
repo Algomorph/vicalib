@@ -22,7 +22,6 @@ find_package(Calibu)
 find_package(Ceres)
 find_package(CVARS)
 find_package(GFlags)
-find_package(GLog)
 find_package(HAL)
 find_package(OpenCV2)
 find_package(Pangolin)
@@ -34,8 +33,6 @@ include_directories(
   ${HAL_INCLUDE_DIRS}
   ${Calibu_INCLUDE_DIRS}
   ${CVARS_INCLUDE_DIRS}
-  ${GLOG_INCLUDE_DIRS}
-  ${GLOG_INCLUDE_DIRS}
   ${GFLAGS_INCLUDE_DIRS}
   ${MINIGLOG_INCLUDE_DIRS}
   ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -62,11 +59,9 @@ set(VICALIB_CONDITIONS
   Calibu_FOUND
   Ceres_FOUND
   GFLAGS_FOUND
-  GLOG_FOUND
   HAL_FOUND
   OpenCV2_FOUND
   Pangolin_FOUND
-  MINIGLOG_FOUND
   )
 
 if(NOT ANDROID)
@@ -77,10 +72,8 @@ if(NOT ANDROID)
     ${CERES_LIBRARIES}
     ${CVARS_LIBRARY}
     ${GFLAGS_LIBRARIES}
-    ${GLOG_LIBRARIES}
     ${OpenCV2_LIBRARIES}
     ${PbMsgs_LIBRARIES}
-    ${MINIGLOG_LIBRARIES}
     CONDITIONS ${VICALIB_CONDITIONS}
     )
 endif()

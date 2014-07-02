@@ -4,6 +4,7 @@
 #include <time.h>
 #include <thread>
 #include <functional>
+#include <unistd.h>
 
 #include <calibu/cam/CameraXml.h>
 #include <calibu/cam/CameraModelT.h>
@@ -20,6 +21,7 @@
 #include <visual-inertial-calibration/calibration-stats.h>
 
 static const int64_t kCalibrateAllPossibleFrames = -1;
+static const int kNoGridPreset = -1;
 
 #ifdef BUILD_GUI
 DEFINE_bool(paused, false, "Start video paused");
@@ -40,9 +42,10 @@ DEFINE_double(grid_spacing, 0.01355/*0.254 / (19 - 1) meters */,
 DEFINE_int32(grid_seed, 71, "seed used to generate the grid.");
 DEFINE_bool(has_initial_guess, false,
             "Whether or not the given calibration file has a valid guess.");
-DEFINE_int32(grid_preset, visual_inertial_calibration::GridPresetGWUSmall,
+DEFINE_int32(grid_preset, kNoGridPreset,
              "Which grid preset to use. "
-             "Must be a visual_inertial_calibration::GridPreset.");
+             "Must be a visual_inertial_calibration::GridPreset. "
+             "0 for small GWU grid, 1 for large Google grid.");
 DEFINE_double(max_reprojection_error, 0.15,  // pixels
               "Maximum allowed reprojection error.");
 DEFINE_int64(num_vicalib_frames, kCalibrateAllPossibleFrames,
@@ -61,7 +64,6 @@ DEFINE_int32(static_threshold_preset,
              visual_inertial_calibration::StaticThresholdManual,
              "Which grid preset to use. "
              "Must be a visual_inertial_calibration::StaticThresholdPreset.");
-DEFINE_bool(use_grid_preset, false, "Use one of the predefined grid sizes.");
 DEFINE_bool(use_only_when_static, true, "Only use frames where the device is "
             "stationary.");
 DEFINE_bool(use_static_threshold_preset, false,
@@ -92,7 +94,7 @@ VicalibEngine::VicalibEngine(const std::function<void()>& stop_sensors_callback,
   try {
     camera_.reset(new hal::Camera(hal::Uri(FLAGS_cam)));
   } catch (...) {
-    LOG(ERROR) << "Could not create camera from URI: " << FLAGS_cam;
+    LOG(FATAL) << "Could not create camera from URI: " << FLAGS_cam;
   }
   stats_.reset(new CalibrationStats(camera_->NumChannels()));
 
@@ -102,7 +104,7 @@ VicalibEngine::VicalibEngine(const std::function<void()>& stop_sensors_callback,
       imu_->RegisterIMUDataCallback(
           std::bind(&VicalibEngine::ImuHandler, this, _1));
     } catch (...) {
-      LOG(ERROR) << "Could not create IMU from URI: " << FLAGS_imu;
+      LOG(FATAL) << "Could not create IMU from URI: " << FLAGS_imu;
     }
   }
 }
@@ -161,7 +163,7 @@ std::shared_ptr<VicalibTask> VicalibEngine::InitTask() {
   double grid_spacing = FLAGS_grid_spacing;
 
   Eigen::MatrixXi grid;
-  if (FLAGS_use_grid_preset) {
+  if (FLAGS_grid_preset != kNoGridPreset) {
     switch (FLAGS_grid_preset) {
       case GridPresetGWUSmall:
         grid = GWUSmallGrid();
@@ -288,7 +290,7 @@ bool VicalibEngine::CameraLoop() {
   std::shared_ptr<pb::ImageArray> images = pb::ImageArray::Create();
   bool captured = camera_->Capture(*images);
   bool should_use = true;
-  if (FLAGS_use_only_when_static) {
+  if (imu_ && FLAGS_use_only_when_static) {
     should_use = accel_filter_.IsStable() && gyro_filter_.IsStable();
   }
 
