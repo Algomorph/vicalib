@@ -657,7 +657,8 @@ class ViCalibrator : public ceres::IterationCallback {
 
   void UpdateImuWeights() {
     // Go through all the cost functions and update the weights.
-    if (is_inertial_active_ && !optimize_rotation_only_) {
+    if (FLAGS_calibrate_imu && is_inertial_active_ &&
+        !optimize_rotation_only_) {
       for (size_t ii = 0; ii < imu_costs_.size() ; ++ii) {
         std::unique_ptr<ImuCostFunctionAndParams>& cost = imu_costs_[ii];
         aligned_vector<ImuMeasurementT<double> > measurements;
@@ -794,7 +795,7 @@ class ViCalibrator : public ceres::IterationCallback {
 
       // Attempt to estimate the gravity vector if inertial constraints
       // are active.
-      if (is_inertial_active_ &&
+      if (FLAGS_calibrate_imu && is_inertial_active_ &&
           !optimize_rotation_only_ &&
           !is_gravity_initialized_) {
         int idx = t_wk_.size() / 2;

@@ -316,7 +316,8 @@ void VicalibTask::Draw3d() {
     pangolin::glColorBin(c, 2, 0.2);
     for (size_t k = 0; k < calibrator_.NumFrames(); ++k) {
       // Draw the camera frame if we had measurements from it
-      if (calibrator_.GetFrame(k)->has_measurements_from_cam[c]) {
+      if (c < calibrator_.GetFrame(k)->has_measurements_from_cam.size() &&
+          calibrator_.GetFrame(k)->has_measurements_from_cam[c]) {
         pangolin::glDrawAxis(
             (calibrator_.GetFrame(k)->t_wp_ * t_ck.inverse()).matrix(), 0.01);
       }
