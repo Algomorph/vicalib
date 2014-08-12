@@ -451,32 +451,30 @@ struct SwitchedFullImuCostFunction {
     aligned_vector<ImuMeasurementT<T> > measurements;
     GetMeasurements(*_ttime_offset, &measurements);
 
-    CHECK_GT(measurements.size(), 0)
-        << "IMU measurements required for cost function calculation.";
-
-    PoseT<T> start_pose;
-    start_pose.t_wp_ = t_wx1;
-    start_pose.v_w_ = v1;
-    start_pose.time_ = measurements.front().time;
-    std::vector<ImuPoseT<T>, Eigen::aligned_allocator<ImuPoseT<T> > > poses;
-    ImuPoseT<T> end_pose = IntegrateResidualJet<T>(
-        start_pose, measurements, bg, ba, sf, g_vector, &poses);
-    // and now calculate the error with this pose
-    residuals_vec.template head<6>() = (end_pose.t_wp_ * t_wx2.inverse()).log();
-
-    // to calculate the velocity error, first augment the IMU integration
-    // velocity with gravity and initial velocity
-    residuals_vec.template tail<3>() = (end_pose.v_w_ - v2);
-
-    // Multiply by the weight matrix, which has been square rooted to be in
-    // standard.
-    residuals_vec = (residuals_vec.transpose() *
-                     weight_sqrt_.template cast<T>()).transpose();
-
-    if (*residal_switch_) {
+    if (measurements.empty() || *residal_switch_) {
       residuals_vec.template head<3>().setZero();
       residuals_vec.template tail<3>().setZero();
+    } else {
+      PoseT<T> start_pose;
+      start_pose.t_wp_ = t_wx1;
+      start_pose.v_w_ = v1;
+      start_pose.time_ = measurements.front().time;
+      std::vector<ImuPoseT<T>, Eigen::aligned_allocator<ImuPoseT<T> > > poses;
+      ImuPoseT<T> end_pose = IntegrateResidualJet<T>(
+          start_pose, measurements, bg, ba, sf, g_vector, &poses);
+      // and now calculate the error with this pose
+      residuals_vec.template head<6>() = (end_pose.t_wp_ * t_wx2.inverse()).log();
+
+      // to calculate the velocity error, first augment the IMU integration
+      // velocity with gravity and initial velocity
+      residuals_vec.template tail<3>() = (end_pose.v_w_ - v2);
+
+      // Multiply by the weight matrix, which has been square rooted to be in
+      // standard.
+      residuals_vec = (residuals_vec.transpose() *
+                       weight_sqrt_.template cast<T>()).transpose();
     }
+
     return true;
   }
 
