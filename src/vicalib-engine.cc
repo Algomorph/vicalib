@@ -229,7 +229,7 @@ std::shared_ptr<VicalibTask> VicalibEngine::InitTask() {
         Eigen::Vector2i size_;
         Eigen::VectorXd params_(calibu::KannalaBrandtCamera<double>::NumParams);
         size_ << w, h;
-        params_  << 300, 300, w/2.0, h/2.0, 0.0, 0.0, 0.0, 0.0;
+        params_  << 300, 300, w/2.0, h/2.0, 10.0, 1.0, 0.1, 0.01;
         std::shared_ptr<calibu::CameraInterface<double>>
           starting_cam(new calibu::KannalaBrandtCamera<double>(params_, size_));
         starting_cam->SetType("calibu_fu_fv_u0_v0_kb4");
